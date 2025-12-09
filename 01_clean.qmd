@@ -1,0 +1,44 @@
+## Load Dependencies
+```{r}
+library(renv)
+library(tidyverse)
+library(readr)
+```
+
+## Load in Data
+```{r}
+raw <- read_csv("data/usa_county_wise.csv")
+head(raw)
+```
+
+## Filter to counties with county level
+```{r}
+raw <- raw |>
+  filter(nchar(FIPS) == 5)
+
+head(raw)
+```
+
+## Convert Date Column
+```{r}
+raw <- raw |>
+  mutate(Date = as.Date(Date, format = "%m/%d/%y"))
+```
+
+## Calculate Incidence
+```{r}
+raw <- raw |>
+  group_by(FIPS) |>
+  arrange(Date) |>
+  mutate(Incidence = Confirmed - lag(Confirmed, default = 0)) |>
+  mutate(Incidence = ifelse(is.na(Incidence) | Incidence < 0, 0, Incidence)) |>
+  ungroup()
+```
+
+## Visualize Data
+```{r}
+raw |>
+  ggplot(aes(x = Date, y = Confirmed, group = FIPS)) +
+  geom_line(alpha = 0.1) +
+  theme_minimal()
+```
