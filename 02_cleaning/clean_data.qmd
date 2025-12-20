@@ -1,0 +1,88 @@
+## Load Dependencies
+```{r}
+library(renv)
+library(tidyverse)
+library(readr)
+```
+
+## Load in Data
+```{r}
+raw_cases <- read_csv("01_data/usa_county_wise.csv")
+head(raw_cases)
+
+raw_pop <- read_csv("01_data/population_sizes.csv")
+head(raw_pop)
+```
+
+## Clean data for joining
+```{r}
+cases <- raw_cases |>
+  filter(nchar(FIPS) == 5) |>
+  mutate(
+    geographic_area = Combined_Key |>
+      str_remove(", US$") |>
+      str_remove(" County") |>
+      str_trim()
+  ) |>
+  select(geographic_area, Confirmed, Deaths, Date)
+
+pop <- raw_pop |>
+  mutate(
+    geographic_area = geographic_area |>
+      str_remove(" County") |>
+      str_trim()
+  )
+```
+
+## join case counts with population sizes
+```{r}
+head(cases)
+head(pop)
+
+combined <- cases |>
+  left_join(pop, by = c("geographic_area" = "geographic_area")) |>
+  filter(!is.na(population_size))
+
+head(combined)
+```
+
+## Convert Date Column
+```{r}
+combined <- combined |>
+  mutate(Date = as.Date(Date, format = "%m/%d/%y"))
+```
+
+## Calculate Incidence
+```{r}
+combined <- combined |>
+  group_by(geographic_area) |>
+  arrange(Date) |>
+  mutate(Incidence = Confirmed - lag(Confirmed, default = 0)) |>
+  mutate(Incidence = ifelse(is.na(Incidence) | Incidence < 0, 0, Incidence)) |>
+  ungroup()
+
+top_50_incidence <- combined |>
+  arrange(desc(Incidence)) |>
+  slice_head(n = 50)
+
+tail(top_50_incidence)
+```
+
+
+## Visualize Data
+```{r}
+combined |>
+  filter(Incidence > 1000) |>
+  ggplot(aes(x = Date, y = Incidence, color = geographic_area)) +
+  geom_line() +
+  labs(
+    title = "COVID-19 Incidence Over Time by County",
+    x = "Date",
+    y = "Daily Incidence"
+  ) +
+  scale_y_log10() +
+  theme_minimal()
+
+
+head(combined)
+```

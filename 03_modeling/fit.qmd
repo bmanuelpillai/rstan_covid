@@ -1,11 +1,42 @@
-# load cmdstanr and compile the Stan model
+## Load Dependencies
 ```{r}
 library(cmdstanr)
+library(bayesplot)
+library(posterior)
+```
+
+## 1) Compile the model
+```{r}
 mod <- cmdstan_model("03_modeling/model.stan")
 ```
 
+## 2) Prepare the data
+```{r}
+# Select a specific county for modeling
+county <- "Young, Texas"
 
-## fit the model
+area_data <- combined |>
+  filter(geographic_area == county) |>
+  arrange(Date)
+
+# 2. Define population and starting state
+# We use the population_size from your data
+pop <- area_data$population_size[1]
+i0 <- 1 # Initial number infected
+s0 <- pop - i0 # Susceptibles
+
+stan_data <- list(
+  T = nrow(area_data),
+  t0 = 0,
+  ts = 1:nrow(area_data), # timesteps
+  cases = as.integer(area_data$Incidence), # observed daily new cases
+  population = pop,
+  S0_frac = s0 / pop,
+  I0_frac = i0 / pop
+)
+```
+
+## 3) Fit the model
 ```{r}
 fit <- mod$sample(
   data = stan_data,
@@ -13,11 +44,19 @@ fit <- mod$sample(
   parallel_chains = 4,
   iter_warmup = 1000,
   iter_sampling = 1000,
-  adapt_delta = 0.95,
-  max_treedepth = 15
+  adapt_delta = 0.95
 )
+```
 
-# 4) diagnostics
-print(fit$summary(c("beta","gamma","R0","rho","phi")))
-mcmc_trace(as_draws_df(fit$draws(c("beta","gamma"))))
+## 4) Check Diagnostics & Summary
+```{r}
+print(fit$summary(c("beta", "gamma", "R0", "rho", "phi")))
+```
+
+## 5) Visualizations
+```{r}
+draws <- fit$draws(c("beta", "gamma", "R0"))
+
+# Generate plots
+mcmc_trace(draws)
 ```
