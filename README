@@ -1,1 +1,8 @@
 Estimating COVID-19 Epidemiological Parameters using R and STAN
+
+Source of Covid-19 Data:
+https://www.kaggle.com/datasets/imdevskp/corona-virus-report/data?select=usa_county_wise.csv
+
+
+Source of US Census Demographic Data:
+https://www.kaggle.com/datasets/muonneutrino/us-census-demographic-data
