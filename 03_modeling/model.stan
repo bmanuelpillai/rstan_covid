@@ -63,7 +63,7 @@ model {
   // Likelihood
   for (t in 1:T) {
     // mu is the reported incidence:
-    // (reporting rate) * (true new infections)
+    // reporting rate * true new infections
     real mu = rho * incidence[t];
     cases[t] ~ neg_binomial_2(mu, phi);
   }
@@ -78,3 +78,11 @@ generated quantities {
     y_rep[t] = neg_binomial_2_rng(mu, phi);
   }
 }
+
+
+// Source of Priors:
+// The median with 95% CI of R0 of COVID-19 was about 2.28 (2.06,2.52) (https://www.sciencedirect.com/science/article/pii/S1201971220300916)
+// Assuming an infectious period of about 7 days, gamma ~ 1/7 = 0.14(https://www.nhs.uk/conditions/covid-19/how-to-avoid-catching-and-spreading-covid-19/)
+// Thus, beta = R0 * gamma ~ 2.28 * 0.14 = 0.32
+// We use a lognormal prior for beta with mean around 0.4 to allow some flexibility.
+// The reporting rate rho is assumed to be low, so a Beta(2,5) prior.
