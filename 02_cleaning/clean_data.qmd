@@ -1,4 +1,10 @@
+---
+title: "COVID-19 Data Cleaning"
+description: "Load, clean, and join county-level COVID-19 case data with US Census population sizes."
+---
+
 ## Load Dependencies
+
 ```{r}
 library(renv)
 library(tidyverse)
@@ -6,6 +12,10 @@ library(readr)
 ```
 
 ## Load in Data
+
+Read the raw county-wise COVID-19 case counts and the US Census population
+sizes into R.
+
 ```{r}
 raw_cases <- read_csv("01_data/usa_county_wise.csv")
 head(raw_cases)
@@ -14,7 +24,12 @@ raw_pop <- read_csv("01_data/population_sizes.csv")
 head(raw_pop)
 ```
 
-## Clean data for joining
+## Clean Data for Joining
+
+Standardize the `geographic_area` column in both datasets so that county names
+match across the two tables. We keep only rows with a valid 5-digit FIPS code
+to exclude state-level aggregates.
+
 ```{r}
 cases <- raw_cases |>
   filter(nchar(FIPS) == 5) |>
@@ -34,7 +49,11 @@ pop <- raw_pop |>
   )
 ```
 
-## join case counts with population sizes
+## Join Case Counts with Population Sizes
+
+Left-join the case counts onto the population table and drop rows where no
+matching population was found.
+
 ```{r}
 head(cases)
 head(pop)
@@ -47,12 +66,21 @@ head(combined)
 ```
 
 ## Convert Date Column
+
+Parse the `Date` column from its original `MM/DD/YY` string format into an R
+`Date` object so that it can be used in time-series calculations.
+
 ```{r}
 combined <- combined |>
   mutate(Date = as.Date(Date, format = "%m/%d/%y"))
 ```
 
 ## Calculate Incidence
+
+Compute daily new cases (incidence) for each county as the first difference of
+cumulative confirmed cases. Negative differences (data corrections) are clamped
+to zero.
+
 ```{r}
 combined <- combined |>
   group_by(geographic_area) |>
@@ -68,8 +96,12 @@ top_50_incidence <- combined |>
 tail(top_50_incidence)
 ```
 
-
 ## Visualize Data
+
+Plot daily incidence over time for counties with more than 1,000 new cases on
+at least one day, using a log-10 scale on the y-axis to accommodate the wide
+range of values.
+
 ```{r}
 combined |>
   filter(Incidence > 1000) |>
