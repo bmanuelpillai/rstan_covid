@@ -1,16 +1,32 @@
+---
+title: "Bayesian SIR Model Fitting"
+description: "Fit a Bayesian SIR model to county-level COVID-19 incidence data using CmdStanR."
+---
+
 ## Load Dependencies
+
 ```{r}
 library(cmdstanr)
 library(bayesplot)
 library(posterior)
 ```
 
-## 1) Compile the model
+## 1) Compile the Model
+
+Compile the Stan SIR model from `model.stan`. CmdStanR will translate the Stan
+code to C++ and compile it the first time; subsequent runs reuse the compiled
+binary.
+
 ```{r}
 mod <- cmdstan_model("03_modeling/model.stan")
 ```
 
-## 2) Prepare the data
+## 2) Prepare the Data
+
+Select a single county and build the `stan_data` list required by the model.
+The SIR states are expressed as fractions of the total population, so we
+compute `S0_frac` and `I0_frac` from the raw counts.
+
 ```{r}
 # Select a specific county for modeling
 county <- "Young, Texas"
@@ -19,7 +35,7 @@ area_data <- combined |>
   filter(geographic_area == county) |>
   arrange(Date)
 
-# 2. Define population and starting state
+# Define population and starting state
 # We use the population_size from your data
 pop <- area_data$population_size[1]
 i0 <- 1 # Initial number infected
@@ -36,7 +52,11 @@ stan_data <- list(
 )
 ```
 
-## 3) Fit the model
+## 3) Fit the Model
+
+Run MCMC sampling with 4 chains in parallel. `adapt_delta = 0.95` reduces the
+step size to improve sampling in regions of high curvature.
+
 ```{r}
 fit <- mod$sample(
   data = stan_data,
@@ -49,11 +69,21 @@ fit <- mod$sample(
 ```
 
 ## 4) Check Diagnostics & Summary
+
+Inspect posterior summaries for the key epidemiological parameters: the
+transmission rate (`beta`), recovery rate (`gamma`), basic reproduction number
+(`R0`), reporting rate (`rho`), and the negative-binomial overdispersion
+parameter (`phi`).
+
 ```{r}
 print(fit$summary(c("beta", "gamma", "R0", "rho", "phi")))
 ```
 
 ## 5) Visualizations
+
+Plot MCMC trace plots for `beta`, `gamma`, and `R0` to assess chain mixing and
+convergence.
+
 ```{r}
 draws <- fit$draws(c("beta", "gamma", "R0"))
 
