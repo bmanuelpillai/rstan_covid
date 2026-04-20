@@ -28,16 +28,17 @@ def normalize_area(name: str) -> str:
     return name.replace(", US", "").replace(" County", "").strip()
 
 
+def clean_field_name(field: str) -> str:
+    return field.replace('"', "").replace("\ufeff", "").strip()
+
+
 def load_population(pop_path: Path) -> dict[str, int]:
     populations: dict[str, int] = {}
     with pop_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle, skipinitialspace=True)
         if not reader.fieldnames:
             raise ValueError(f"No header found in population file: {pop_path}")
-        area_field = next(
-            (f for f in reader.fieldnames if "geographic_area" in f.replace('"', "").replace("\ufeff", "")),
-            None,
-        )
+        area_field = next((f for f in reader.fieldnames if "geographic_area" in clean_field_name(f)), None)
         if area_field is None:
             raise ValueError(f"Could not find geographic_area column in {pop_path}")
         for row in reader:
@@ -83,8 +84,8 @@ def load_county_series(cases_path: Path, county: str, population: int) -> County
 def sir_incidence(beta: jnp.ndarray, gamma: jnp.ndarray, s0_frac: float, i0_frac: float, population: float, T: int) -> jnp.ndarray:
     def step(carry, _):
         s, i, r = carry
-        new_inf = jnp.clip(beta * s * i, a_min=1e-8)
-        new_rec = jnp.clip(gamma * i, a_min=1e-8)
+        new_inf = jnp.clip(beta * s * i, a_min=1e-8, a_max=s)
+        new_rec = jnp.clip(gamma * i, a_min=1e-8, a_max=i)
 
         s_next = jnp.clip(s - new_inf, a_min=1e-8, a_max=1.0)
         i_next = jnp.clip(i + new_inf - new_rec, a_min=1e-8, a_max=1.0)
