@@ -1,4 +1,4 @@
-jax>=0.4.30
-jaxlib>=0.4.30
+jax==0.4.38
+jaxlib==0.4.38
 numpy>=1.26
 numpyro>=0.15

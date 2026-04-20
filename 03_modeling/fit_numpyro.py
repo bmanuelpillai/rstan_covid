@@ -13,7 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 import numpyro
 import numpyro.distributions as dist
-from numpyro.infer import MCMC, NUTS, Predictive
+from numpyro.infer import MCMC, NUTS
 
 
 @dataclass
@@ -32,8 +32,16 @@ def load_population(pop_path: Path) -> dict[str, int]:
     populations: dict[str, int] = {}
     with pop_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle, skipinitialspace=True)
+        if not reader.fieldnames:
+            raise ValueError(f"No header found in population file: {pop_path}")
+        area_field = next(
+            (f for f in reader.fieldnames if "geographic_area" in f.replace('"', "").replace("\ufeff", "")),
+            None,
+        )
+        if area_field is None:
+            raise ValueError(f"Could not find geographic_area column in {pop_path}")
         for row in reader:
-            area = normalize_area(row["geographic_area"].strip().strip('"'))
+            area = normalize_area(row[area_field].strip().strip('"'))
             pop = int(row["population_size"].strip().strip('"').replace(",", ""))
             populations[area] = pop
     return populations
@@ -100,8 +108,7 @@ def model(cases: jnp.ndarray, population: float, s0_frac: float, i0_frac: float)
     incidence = sir_incidence(beta, gamma, s0_frac, i0_frac, population, T)
     mu = jnp.maximum(rho * incidence, 1e-6)
 
-    numpyro.sample("cases", dist.NegativeBinomial2(mu=mu, concentration=phi), obs=cases)
-    numpyro.sample("y_rep", dist.NegativeBinomial2(mu=mu, concentration=phi))
+    numpyro.sample("cases", dist.NegativeBinomial2(mean=mu, concentration=phi), obs=cases)
     numpyro.deterministic("R0", beta / gamma)
     numpyro.deterministic("incidence", incidence)
 
@@ -119,20 +126,49 @@ def run_inference(series: CountySeries, warmup: int, samples: int, chains: int, 
     mcmc.run(jax.random.PRNGKey(seed), cases=cases, population=series.population, s0_frac=s0_frac, i0_frac=i0_frac)
 
     posterior_samples = mcmc.get_samples()
-    predictive = Predictive(model, posterior_samples=posterior_samples, return_sites=["y_rep", "R0"]) 
-    ppc = predictive(
-        jax.random.PRNGKey(seed + 1),
-        cases=cases,
-        population=series.population,
-        s0_frac=s0_frac,
-        i0_frac=i0_frac,
-    )
+    beta = posterior_samples["beta"]
+    gamma = posterior_samples["gamma"]
+    rho = posterior_samples["rho"]
+    phi = posterior_samples["phi"]
+
+    incidence = jax.vmap(
+        lambda b, g: sir_incidence(b, g, s0_frac=s0_frac, i0_frac=i0_frac, population=series.population, T=cases.shape[0])
+    )(beta, gamma)
+    mu = jnp.maximum(rho[:, None] * incidence, 1e-6)
+
+    def sample_y_rep(key, mean, concentration):
+        key_gamma, key_poisson = jax.random.split(key)
+        lam = jax.random.gamma(key_gamma, concentration, shape=mean.shape) * (mean / concentration)
+        return jax.random.poisson(key_poisson, lam)
+
+    keys = jax.random.split(jax.random.PRNGKey(seed + 1), mu.shape[0])
+    y_rep = jax.vmap(sample_y_rep)(keys, mu, phi)
+
+    ppc = {
+        "y_rep": y_rep,
+        "R0": beta / gamma,
+        "incidence": incidence,
+    }
 
     return mcmc, ppc
 
 
 def print_summary(mcmc: MCMC, ppc: dict[str, jnp.ndarray], observed: np.ndarray):
-    mcmc.print_summary(exclude_deterministic=False)
+    posterior = mcmc.get_samples()
+    summary_sites = {
+        "beta": np.asarray(posterior["beta"]),
+        "gamma": np.asarray(posterior["gamma"]),
+        "rho": np.asarray(posterior["rho"]),
+        "phi": np.asarray(posterior["phi"]),
+        "R0": np.asarray(ppc["R0"]),
+    }
+    print("\nPosterior summary:")
+    print("param\tmean\tstd\tp05\tp50\tp95")
+    for name, values in summary_sites.items():
+        print(
+            f"{name}\t{values.mean():.4f}\t{values.std(ddof=1):.4f}\t"
+            f"{np.percentile(values, 5):.4f}\t{np.percentile(values, 50):.4f}\t{np.percentile(values, 95):.4f}"
+        )
 
     y_rep = np.asarray(ppc["y_rep"])
     pred_median = np.median(y_rep, axis=0)
@@ -155,6 +191,7 @@ def main():
     parser.add_argument("--chains", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
+    numpyro.set_host_device_count(args.chains)
 
     root = Path(__file__).resolve().parents[1]
     cases_path = root / args.cases_path
@@ -175,5 +212,4 @@ def main():
 
 
 if __name__ == "__main__":
-    numpyro.set_host_device_count(4)
     main()

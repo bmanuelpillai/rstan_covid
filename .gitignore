@@ -1,1 +1,3 @@
 03_modeling/model
+__pycache__/
+*.pyc
