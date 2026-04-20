@@ -15,7 +15,9 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS
 
+# Small floors used for numerical stability in compartment dynamics.
 MIN_COMPARTMENT_VALUE = 1e-8
+# Minimum observation mean used by the count likelihood.
 MIN_MEAN_VALUE = 1e-6
 
 
@@ -124,10 +126,12 @@ def run_inference(series: CountySeries, warmup: int, samples: int, chains: int, 
     i0_frac = i0 / series.population
 
     cases = jnp.asarray(series.incidence.astype(np.int32))
+    base_key = jax.random.PRNGKey(seed)
+    run_key, ppc_key = jax.random.split(base_key)
 
     kernel = NUTS(model, target_accept_prob=0.95)
     mcmc = MCMC(kernel, num_warmup=warmup, num_samples=samples, num_chains=chains, progress_bar=True)
-    mcmc.run(jax.random.PRNGKey(seed), cases=cases, population=series.population, s0_frac=s0_frac, i0_frac=i0_frac)
+    mcmc.run(run_key, cases=cases, population=series.population, s0_frac=s0_frac, i0_frac=i0_frac)
 
     posterior_samples = mcmc.get_samples()
     beta = posterior_samples["beta"]
@@ -141,11 +145,12 @@ def run_inference(series: CountySeries, warmup: int, samples: int, chains: int, 
     mu = jnp.maximum(rho[:, None] * incidence, MIN_MEAN_VALUE)
 
     def sample_y_rep(key, mean, concentration):
+        """Sample NegativeBinomial2(mean, concentration) via a Gamma-Poisson mixture."""
         key_gamma, key_poisson = jax.random.split(key)
         lam = jax.random.gamma(key_gamma, concentration, shape=mean.shape) * (mean / concentration)
         return jax.random.poisson(key_poisson, lam)
 
-    keys = jax.random.split(jax.random.PRNGKey(seed + 1), mu.shape[0])
+    keys = jax.random.split(ppc_key, mu.shape[0])
     y_rep = jax.vmap(sample_y_rep)(keys, mu, phi)
 
     ppc = {
