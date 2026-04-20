@@ -86,7 +86,7 @@ def load_county_series(cases_path: Path, county: str, population: int) -> County
     )
 
 
-def sir_incidence(
+def simulate_sir_incidence(
     beta: jnp.ndarray, gamma: jnp.ndarray, s0_frac: float, i0_frac: float, population: float, n_steps: int
 ) -> jnp.ndarray:
     def step(carry, _):
@@ -111,9 +111,10 @@ def model(cases: jnp.ndarray, population: float, s0_frac: float, i0_frac: float)
     beta = numpyro.sample("beta", dist.LogNormal(jnp.log(0.4), 0.5))
     gamma = numpyro.sample("gamma", dist.LogNormal(jnp.log(0.14), 0.2))
     rho = numpyro.sample("rho", dist.Beta(2.0, 5.0))
+    # phi is the NB2 concentration (higher phi = lower overdispersion).
     phi = numpyro.sample("phi", dist.Exponential(1.0))
 
-    incidence = sir_incidence(beta, gamma, s0_frac, i0_frac, population, n_steps)
+    incidence = simulate_sir_incidence(beta, gamma, s0_frac, i0_frac, population, n_steps)
     mu = jnp.maximum(rho * incidence, MIN_MEAN_VALUE)
 
     numpyro.sample("cases", dist.NegativeBinomial2(mean=mu, concentration=phi), obs=cases)
@@ -142,14 +143,14 @@ def run_inference(series: CountySeries, warmup: int, samples: int, chains: int, 
     phi = posterior_samples["phi"]
 
     incidence = jax.vmap(
-        lambda b, g: sir_incidence(
+        lambda b, g: simulate_sir_incidence(
             b, g, s0_frac=s0_frac, i0_frac=i0_frac, population=series.population, n_steps=cases.shape[0]
         )
     )(beta, gamma)
     mu = jnp.maximum(rho[:, None] * incidence, MIN_MEAN_VALUE)
 
     def sample_y_rep(key, mean, concentration):
-        """Sample from Negative Binomial (NB2) using a Gamma-Poisson mixture."""
+        """Sample from NB2 via Gamma-Poisson, since direct discrete sampling is not in HMC model."""
         key_gamma, key_poisson = jax.random.split(key)
         concentration = jnp.broadcast_to(concentration, mean.shape)
         lam = jax.random.gamma(key_gamma, concentration) * (mean / concentration)
