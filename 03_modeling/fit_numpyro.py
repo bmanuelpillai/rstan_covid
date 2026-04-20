@@ -15,6 +15,9 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS
 
+MIN_COMPARTMENT_VALUE = 1e-8
+MIN_MEAN_VALUE = 1e-6
+
 
 @dataclass
 class CountySeries:
@@ -84,14 +87,14 @@ def load_county_series(cases_path: Path, county: str, population: int) -> County
 def sir_incidence(beta: jnp.ndarray, gamma: jnp.ndarray, s0_frac: float, i0_frac: float, population: float, T: int) -> jnp.ndarray:
     def step(carry, _):
         s, i, r = carry
-        new_inf = jnp.clip(beta * s * i, a_min=1e-8, a_max=s)
-        new_rec = jnp.clip(gamma * i, a_min=1e-8, a_max=i)
+        new_inf = jnp.clip(beta * s * i, a_min=MIN_COMPARTMENT_VALUE, a_max=s)
+        new_rec = jnp.clip(gamma * i, a_min=MIN_COMPARTMENT_VALUE, a_max=i)
 
-        s_next = jnp.clip(s - new_inf, a_min=1e-8, a_max=1.0)
-        i_next = jnp.clip(i + new_inf - new_rec, a_min=1e-8, a_max=1.0)
-        r_next = jnp.clip(r + new_rec, a_min=1e-8, a_max=1.0)
+        s_next = jnp.clip(s - new_inf, a_min=MIN_COMPARTMENT_VALUE, a_max=1.0)
+        i_next = jnp.clip(i + new_inf - new_rec, a_min=MIN_COMPARTMENT_VALUE, a_max=1.0)
+        r_next = jnp.clip(r + new_rec, a_min=MIN_COMPARTMENT_VALUE, a_max=1.0)
 
-        return (s_next, i_next, r_next), jnp.maximum(new_inf * population, 1e-6)
+        return (s_next, i_next, r_next), jnp.maximum(new_inf * population, MIN_MEAN_VALUE)
 
     y0 = (jnp.array(s0_frac), jnp.array(i0_frac), jnp.array(1.0 - s0_frac - i0_frac))
     _, incidence = jax.lax.scan(step, y0, xs=None, length=T)
@@ -107,7 +110,7 @@ def model(cases: jnp.ndarray, population: float, s0_frac: float, i0_frac: float)
     phi = numpyro.sample("phi", dist.Exponential(1.0))
 
     incidence = sir_incidence(beta, gamma, s0_frac, i0_frac, population, T)
-    mu = jnp.maximum(rho * incidence, 1e-6)
+    mu = jnp.maximum(rho * incidence, MIN_MEAN_VALUE)
 
     numpyro.sample("cases", dist.NegativeBinomial2(mean=mu, concentration=phi), obs=cases)
     numpyro.deterministic("R0", beta / gamma)
@@ -135,7 +138,7 @@ def run_inference(series: CountySeries, warmup: int, samples: int, chains: int, 
     incidence = jax.vmap(
         lambda b, g: sir_incidence(b, g, s0_frac=s0_frac, i0_frac=i0_frac, population=series.population, T=cases.shape[0])
     )(beta, gamma)
-    mu = jnp.maximum(rho[:, None] * incidence, 1e-6)
+    mu = jnp.maximum(rho[:, None] * incidence, MIN_MEAN_VALUE)
 
     def sample_y_rep(key, mean, concentration):
         key_gamma, key_poisson = jax.random.split(key)
