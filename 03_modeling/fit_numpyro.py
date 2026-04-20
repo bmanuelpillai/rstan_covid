@@ -145,13 +145,13 @@ def run_inference(series: CountySeries, warmup: int, samples: int, chains: int, 
     mu = jnp.maximum(rho[:, None] * incidence, MIN_MEAN_VALUE)
 
     def sample_y_rep(key, mean, concentration):
-        """Sample NegativeBinomial2(mean, concentration) via a Gamma-Poisson mixture."""
+        """Sample NB2 by drawing lambda ~ Gamma(k, k/mean) then y ~ Poisson(lambda)."""
         key_gamma, key_poisson = jax.random.split(key)
         lam = jax.random.gamma(key_gamma, concentration, shape=mean.shape) * (mean / concentration)
         return jax.random.poisson(key_poisson, lam)
 
     keys = jax.random.split(ppc_key, mu.shape[0])
-    y_rep = jax.vmap(sample_y_rep)(keys, mu, phi)
+    y_rep = jax.vmap(sample_y_rep)(keys, mu, phi[:, None])
 
     ppc = {
         "y_rep": y_rep,
