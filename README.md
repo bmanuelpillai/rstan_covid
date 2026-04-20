@@ -1,16 +1,17 @@
-# Estimating COVID-19 Epidemiological Parameters using R and Stan
+# Estimating COVID-19 Epidemiological Parameters using R and Stan / Python and NumPyro
 
 This project fits a Bayesian SIR (Susceptible-Infected-Recovered) model to
-county-level COVID-19 case data from the United States using
-[RStan](https://mc-stan.org/rstan/) / [CmdStanR](https://mc-stan.org/cmdstanr/)
-and [Quarto](https://quarto.org/).
+county-level COVID-19 case data from the United States using either:
+
+- [RStan](https://mc-stan.org/rstan/) / [CmdStanR](https://mc-stan.org/cmdstanr/) and [Quarto](https://quarto.org/)
+- [NumPyro](https://num.pyro.ai/) with JAX in Python
 
 ## Repository Structure
 
 ```
 01_data/            Raw data files
 02_cleaning/        Data cleaning and preparation (clean_data.qmd)
-03_modeling/        Stan model and fitting script (model.stan, fit.qmd)
+03_modeling/        Stan and NumPyro model workflows
 ```
 
 ## Workflow
@@ -21,6 +22,11 @@ and [Quarto](https://quarto.org/).
 2. **Model fitting** – Run `03_modeling/fit.qmd` to compile the Stan SIR model,
    prepare the data for a chosen county, run MCMC sampling, and inspect
    posterior diagnostics and visualizations.
+3. **NumPyro model fitting** – Install Python dependencies from
+   `03_modeling/requirements-numpyro.txt`, then run
+   `python 03_modeling/fit_numpyro.py --county "Young, Texas"` to fit an
+   equivalent Bayesian SIR model in NumPyro and print posterior + posterior
+   predictive summaries.
 
 ## Data Sources
 
@@ -39,4 +45,10 @@ Restore the project library with:
 renv::restore()
 ```
 
-Key packages used: `tidyverse`, `cmdstanr`, `bayesplot`, `posterior`.
+Key R packages used: `tidyverse`, `cmdstanr`, `bayesplot`, `posterior`.
+
+For NumPyro:
+
+```bash
+python -m pip install -r 03_modeling/requirements-numpyro.txt
+```
